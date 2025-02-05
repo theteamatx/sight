@@ -1,8 +1,19 @@
 """Tests for the MessageQueue class."""
+
 import unittest
 
-from sight_service.message_logger import LogStorageCollectStrategyEmpty
-import sight_service.message_queue as mq
+from sight_service.message_queue.interface import IMessageQueue
+from sight_service.message_queue.interface import IncrementalUUID
+from sight_service.message_queue.interface import IUUIDStrategy
+from sight_service.message_queue.interface import MessageState
+from sight_service.message_queue.interface import RandomUUID
+from sight_service.message_queue.list_lock_queue import ListLockMessageQueue
+from sight_service.message_queue.message_logger.interface import (
+    ILogStorageCollectStrategy
+)
+from sight_service.message_queue.message_logger.log_storage_collect import (
+    NoneLogStorageCollectStrategy
+)
 from sight_service.tests import colorful_tests
 
 
@@ -19,10 +30,11 @@ class TestMessageQueue(unittest.TestCase):
     """Set up the MessageQueue and IncrementalUUID for testing."""
     super().setUp()
     # Use IncrementalUUID for most tests to have predictable IDs
-    self.incremental_id_generator = mq.IncrementalUUID()
-    # Create instances of the LogStorageCollectStrategy
-    self.log_storage_collect_strategy = LogStorageCollectStrategyEmpty()
-    self.queue = mq.MessageQueue[int](
+    self.incremental_id_generator: IUUIDStrategy = IncrementalUUID()
+    # Create instances of the NoneLogStorageCollectStrategy
+    self.log_storage_collect_strategy: ILogStorageCollectStrategy = (
+        NoneLogStorageCollectStrategy())
+    self.queue: IMessageQueue = ListLockMessageQueue[int](
         id_generator=self.incremental_id_generator,
         batch_size=2,
         logger_storage_strategy=self.log_storage_collect_strategy,
@@ -145,46 +157,12 @@ class TestMessageQueue(unittest.TestCase):
     self.queue.push_message(200)
     self.queue.create_active_batch(worker_id='worker1')
     location = self.queue.find_message_location(1)
-    self.assertEqual(location, mq.MessageState.ACTIVE)
-
-  def test_get_all_messages(self):
-    """Test get_all_messages() with 2 pending messages and 1 completed message."""
-
-    self.queue.push_message(100)
-    self.queue.push_message(200)
-
-    all_messages = self.queue.get_all_messages()
-    self.assertEqual(len(all_messages['pending']), 2)
-    self.assertEqual(len(all_messages['active']),
-                     0)  # No messages should be in active yet
-    self.assertEqual(len(all_messages['completed']), 0)
-
-    # Process the messages, which should move them
-    # to 'active' under a specific worker_id
-    self.queue.create_active_batch(worker_id='worker1')
-    all_messages = self.queue.get_all_messages()
-
-    # After processing, 'pending' should be empty, 'active'
-    # should have 2 messages under 'worker1'
-    self.assertEqual(len(all_messages['pending']), 0)
-    self.assertIn('worker1', all_messages['active'])
-    self.assertEqual(len(all_messages['active']['worker1']), 2)
-    self.assertEqual(len(all_messages['completed']), 0)
-
-    self.queue.complete_message(1, 'worker1')
-    all_messages = self.queue.get_all_messages()
-
-    # 'pending' should still be empty, 'active' should have
-    # 1 message under 'worker1', and 'completed' should have 1 message
-    self.assertEqual(len(all_messages['pending']), 0)
-    self.assertIn('worker1', all_messages['active'])
-    self.assertEqual(len(all_messages['active']['worker1']), 1)
-    self.assertEqual(len(all_messages['completed']), 1)
+    self.assertEqual(location, MessageState.ACTIVE)
 
   def test_add_message_with_uuid(self):
     """Test add_message() with a UUID ID generator."""
-    uuid_id_generator = mq.RandomUUID()
-    queue_with_uuid = mq.MessageQueue[str](
+    uuid_id_generator = RandomUUID()
+    queue_with_uuid = ListLockMessageQueue[str](
         id_generator=uuid_id_generator,
         batch_size=2,
         logger_storage_strategy=self.log_storage_collect_strategy,

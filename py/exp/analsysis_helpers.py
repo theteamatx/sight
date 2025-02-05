@@ -1,15 +1,10 @@
 """Analysis helpers script for mq."""
 
 import datetime
-import json
-from urllib.parse import urlparse
 
-from google.cloud import storage
-import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import seaborn as sns
 
 datetime = datetime.datetime
 
@@ -165,7 +160,7 @@ def analyze_message_flow(logs, desc=''):
       x='timestamp',
       y='message_id',
       color='state',  # Color by the state to differentiate states visually
-      title=desc + 'Plot for Message Transitions Over Time',
+      title=f'{desc} Plot for Message Transitions Over Time',
       labels={
           'timestamp': 'Time',
           'message id': 'Message_ID'
@@ -199,3 +194,190 @@ def analyze_throughtput(logs, desc):
   throughput_df = calculate_throughput(logs)
   # print(throughput_df)
   plot_throughput_trends(throughput_df, desc)
+
+
+def analyze_full_queue_sizes(logs, desc=''):
+  """Analyzes the sizes of the pending, active, and completed queues over time.
+
+  Args:
+      logs (list): List of dictionaries containing log data. Each log should
+        include 'timestamp', 'state', and 'message_id'.
+      desc (str): Description or title prefix for the plot.
+  """
+
+  # Create a DataFrame from the logs
+  df = pd.DataFrame(logs)
+
+  # Convert the 'timestamp' column to datetime type
+  df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+  # Sort logs by timestamp to ensure proper order
+  df = df.sort_values('timestamp')
+
+  # Initialize columns for queue changes
+  df['pending_change'] = df['state'].apply(lambda x: 1 if x == 'pending' else -1
+                                           if x == 'active' else 0)
+  df['active_change'] = df['state'].apply(lambda x: 1 if x == 'active' else -1
+                                          if x == 'completed' else 0)
+  df['completed_change'] = df['state'].apply(lambda x: 1
+                                             if x == 'completed' else 0)
+
+  # Calculate cumulative sizes for each queue
+  df['pending_size'] = df['pending_change'].cumsum()
+  df['active_size'] = df['active_change'].cumsum()
+  df['completed_size'] = df['completed_change'].cumsum()
+
+  # Create a melted DataFrame to plot all sizes in one graph
+  queue_sizes = df.melt(
+      id_vars=['timestamp'],
+      value_vars=['pending_size', 'active_size', 'completed_size'],
+      var_name='Queue',
+      value_name='Size',
+  )
+
+  # Create a line plot for queue sizes over time
+  fig = px.line(
+      queue_sizes,
+      x='timestamp',
+      y='Size',
+      color='Queue',  # Different colors for each queue
+      title=f'{desc} Queue Sizes Over Time',
+      labels={
+          'timestamp': 'Time',
+          'Size': 'Queue Size'
+      },
+      template='plotly_dark',  # Optional: dark theme
+  )
+
+  # Customize layout for better readability
+  fig.update_layout(
+      hovermode='closest',
+      xaxis=dict(showgrid=True, title='Timestamp'),
+      yaxis=dict(showgrid=True, title='Queue Size'),
+      margin=dict(t=40, b=40, l=40, r=40),  # Adjust margins
+      legend=dict(title='Queue',
+                  orientation='h',
+                  x=0.5,
+                  xanchor='center',
+                  y=-0.2),
+  )
+
+  # Show the plot
+  fig.show()
+
+
+def analyze_message_time_taken_in_state(logs, desc=''):
+  """Analyzes the time taken for messages to transition between states.
+
+  Args:
+    logs: A list of dictionaries, where each dictionary represents a log entry.
+      Each log entry should contain the following keys: 'timestamp',
+      'message_id', 'state', and 'time_taken'.
+    desc: An optional description for the plot title.
+
+  """
+
+  # Create a DataFrame from the logs
+  df = pd.DataFrame(logs)
+
+  # Convert the 'timestamp' column to datetime type
+  df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+  # Sort logs by timestamp to ensure proper order
+  df = df.sort_values('timestamp')
+
+  fig = px.line(
+      df,
+      x='message_id',
+      y='time_taken',
+      color='state',
+      markers=True,
+      title=f'{desc} Message Time taken in each state',
+      labels={
+          'time_taken': 'Time taken (seconds)',
+          'message_id': 'Message ID',
+          'state': 'Queue State',
+      },
+      color_discrete_map={
+          'PENDING': '#FFA500',  # Orange
+          'ACTIVE': '1E90FF',  # Blue
+          'COMPLETED': '#32CD32',  # Green
+      },
+      template='plotly_dark',  # Optional: dark theme
+  )
+
+  # Customize layout for better readability
+  fig.update_layout(
+      hovermode='closest',
+      xaxis=dict(showgrid=True, title='Message ids'),
+      yaxis=dict(showgrid=True, title='Time taken in seconds'),
+      margin=dict(t=40, b=40, l=40, r=40),  # Adjust margins
+      legend=dict(title='Queue\'s states',
+                  orientation='h',
+                  x=0.5,
+                  xanchor='center',
+                  y=-0.2),
+  )
+
+  # Show the plot
+  fig.show()
+
+
+def analyze_message_time_taken_with_time(logs, desc=''):
+  """Analyzes message time taken with time from logs.
+
+  Args:
+    logs: A list of dictionaries, where each dictionary represents a log entry
+      and contains keys like 'timestamp', 'message_id', 'state', and
+      'time_taken'.
+    desc: A description of the logs.
+
+  Returns:
+    None
+  """
+  # Create a DataFrame from the logs
+  df = pd.DataFrame(logs)
+
+  # Convert the 'timestamp' column to datetime type
+  df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+  # Sort logs by timestamp to ensure proper order
+  df = df.sort_values('timestamp')
+
+  fig = px.line(
+      df,
+      x='timestamp',
+      y='time_taken',
+      color='state',
+      markers=True,
+      title=f'{desc} Message Time Taken with reference to timestamp',
+      labels={
+          'time_taken': 'Time Taken (seconds)',
+          'timestamp': 'TimeStamp',
+          'state': 'Queue State',
+      },
+      color_discrete_map={
+          'PENDING': '#FFA500',  # Orange
+          'ACTIVE': '1E90FF',  # Blue
+          'COMPLETED': '#32CD32',  # Green
+      },
+      template='plotly_dark',  # Optional: dark theme
+  )
+
+  # Customize layout for better readability
+  fig.update_layout(
+      hovermode='closest',
+      xaxis=dict(showgrid=True, title='Time'),
+      yaxis=dict(showgrid=True, title='Time taken (seconds)'),
+      margin=dict(t=40, b=40, l=40, r=40),  # Adjust margins
+      legend=dict(
+          title="Queue's states",
+          orientation='h',
+          x=0.5,
+          xanchor='center',
+          y=-0.2,
+      ),
+  )
+
+  # Show the plot
+  fig.show()
